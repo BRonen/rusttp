@@ -25,26 +25,25 @@ fn handle_connection(thread_id: usize, mut stream: TcpStream) {
 }
 
 struct Worker {
-    id: usize,
-    thread: thread::JoinHandle<Arc<Mutex<mpsc::Receiver<Job>>>>
+    _id: usize,
+    _thread: thread::JoinHandle<()>
 }
 
 impl Worker {
-    fn new(id: usize, receiver: Arc<Mutex<mpsc::Receiver<Job>>>) -> Worker {
-        let thread = thread::spawn(move || loop {
-            while let Ok(job) = receiver.lock().unwrap().recv() {
-                println!("Worker {id} got a job; executing.");
+    fn new(_id: usize, receiver: Arc<Mutex<mpsc::Receiver<Job>>>) -> Worker {
+        let _thread = thread::spawn(move || loop {
+            let job = receiver.lock().unwrap().recv().unwrap();
+            println!("Worker {_id} got a job; executing.");
 
-                job(id);
-            }
+            job(_id)
         });
 
-        Worker { id, thread }
+        Worker { _id, _thread }
     }
 }
 
 struct ThreadPool {
-    workers: Vec<Worker>,
+    _workers: Vec<Worker>,
     sender: mpsc::Sender<Job>,
 }
 
@@ -54,15 +53,15 @@ impl ThreadPool {
     pub fn new(size: usize) -> ThreadPool {
         assert!(size > 0);
         
-        let mut workers = Vec::with_capacity(size);
+        let mut _workers = Vec::with_capacity(size);
         let (sender, receiver) = mpsc::channel();
         
         let receiver = Arc::new(Mutex::new(receiver));
         for id in 0..size {
-            workers.push(Worker::new(id, Arc::clone(&receiver)));
+            _workers.push(Worker::new(id, Arc::clone(&receiver)));
         }
         
-        ThreadPool { workers, sender }
+        ThreadPool { _workers, sender }
     }
 
     pub fn execute<F>(&self, f: F)
