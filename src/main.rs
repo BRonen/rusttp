@@ -1,89 +1,38 @@
-use std::{
-    thread,
-    sync::{mpsc, Arc, Mutex},
-    io::{prelude::*, BufReader},
-    net::{TcpListener, TcpStream},
+use tokio::{
+    net::TcpListener,
+    io::{AsyncReadExt, AsyncWriteExt},
 };
 
-fn handle_connection(thread_id: usize, mut stream: TcpStream) {
-    let buf_reader = BufReader::new(&mut stream);
-    let _http_request: Vec<_> = buf_reader
-        .lines()
-        .map(|result| result.unwrap())
-        .take_while(|line| !line.is_empty())
-        .collect();
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let listener = TcpListener::bind("127.0.0.1:8080").await?;
 
-    let status_line = "HTTP/1.1 716 OK";
+    loop {
+        let (mut socket, _) = listener.accept().await?;
 
-    let contents = format!("{{\"test\": \"hello world\", \"id\": \"{thread_id}\"}}\n");
-    let length = contents.len();
+        tokio::spawn(async move {
+            let mut buf = [0; 1024];
 
-    let response =
-    format!("{status_line}\r\nContent-Type: application/json\r\nContent-Length: {length}\r\n\r\n{contents}");
+            socket.read(&mut buf).await.unwrap();
+            
+            let _buf = buf.iter()
+                .filter(|a| {**a != 0})
+                .map(|a| {
+                    if *a == 0 {' '}
+                    else {*a as char}
+                }).collect::<String>();
 
-    stream.write_all(response.as_bytes()).unwrap();
-}
+            println!("{}", _buf);
 
-struct Worker {
-    _id: usize,
-    _thread: thread::JoinHandle<()>
-}
+            let status_line = "HTTP/1.1 716 OK";
 
-impl Worker {
-    fn new(_id: usize, receiver: Arc<Mutex<mpsc::Receiver<Job>>>) -> Worker {
-        let _thread = thread::spawn(move || loop {
-            let job = receiver.lock().unwrap().recv().unwrap();
-            println!("Worker {_id} got a job; executing.");
+            let contents = format!("{{\"test\": \"hello world\"}}\n");
+            let length = contents.len();
 
-            job(_id)
+            let response =
+            format!("{status_line}\r\nContent-Type: application/json\r\nContent-Length: {length}\r\n\r\n{contents}");
+
+            socket.write_all(response.as_bytes()).await
         });
-
-        Worker { _id, _thread }
-    }
-}
-
-struct ThreadPool {
-    _workers: Vec<Worker>,
-    sender: mpsc::Sender<Job>,
-}
-
-type Job = Box<dyn FnOnce(usize) + Send + 'static>;
-
-impl ThreadPool {
-    pub fn new(size: usize) -> ThreadPool {
-        assert!(size > 0);
-        
-        let mut _workers = Vec::with_capacity(size);
-        let (sender, receiver) = mpsc::channel();
-        
-        let receiver = Arc::new(Mutex::new(receiver));
-        for id in 0..size {
-            _workers.push(Worker::new(id, Arc::clone(&receiver)));
-        }
-        
-        ThreadPool { _workers, sender }
-    }
-
-    pub fn execute<F>(&self, f: F)
-    where
-        F: FnOnce(usize) + Send + 'static,
-    {
-        let job = Box::new(f);
-    
-        self.sender.send(job).unwrap();
-    }
-}
-
-fn main() {
-    let listener = TcpListener::bind("0.0.0.0:7878").unwrap();
-    
-    let pool = ThreadPool::new(4);
-    
-    for stream in listener.incoming() {
-        let stream = stream.unwrap();
-
-        pool.execute(|id: usize| {
-            handle_connection(id, stream);
-        })
     }
 }
